@@ -36,6 +36,12 @@ class PoolConfig:
             "description": "Maximum time in milliseconds a connection can remain idle before being closed (None means no limit)"
         },
     )
+    local_addr: Optional[tuple[str, int]] = field(
+        default=None,
+        metadata={
+            "description": "Local address (host, port) to bind to when making connections. None means use system default."
+        },
+    )
 
     def __hash__(self):
         """Make PoolConfig hashable for use as dictionary keys.
@@ -43,7 +49,7 @@ class PoolConfig:
         Returns:
             int: Hash value based on the configuration values
         """
-        return hash((self.size, self.max_conn_requests, self.max_conn_idle_ms))
+        return hash((self.size, self.max_conn_requests, self.max_conn_idle_ms, self.local_addr))
 
 
 class BasePool(ABC):
@@ -64,6 +70,10 @@ class BasePool(ABC):
     def _init_pool(self, connection_cls):
         """Initialize the pool structure."""
         pass
+
+    def _create_connection(self, connection_cls):
+        """Create a new connection with pool configuration."""
+        return connection_cls(self, local_addr=self.conf.local_addr)
 
     @abstractmethod
     async def acquire(self, urlparsed: ParseResult = None):
@@ -116,7 +126,7 @@ class CyclicQueuePool(BasePool):
     def _init_pool(self, connection_cls):
         self.pool = Queue(self.pool_size)
         for _ in range(self.pool_size):
-            self.pool.put_nowait(connection_cls(self))
+            self.pool.put_nowait(self._create_connection(connection_cls))
 
     async def acquire(self, _urlparsed: ParseResult = None):
         """Acquire connection."""
@@ -160,7 +170,7 @@ class SmartPool(BasePool):
         self.pool = set()
         self.sem = Semaphore(self.pool_size)
         for _ in range(self.pool_size):
-            self.pool.add(connection_cls(self))
+            self.pool.add(self._create_connection(connection_cls))
 
     async def acquire(self, urlparsed: ParseResult = None):
         """Acquire connection."""
@@ -190,7 +200,7 @@ class SmartPool(BasePool):
         # Check if connection is idle
         if conn is not None and self._is_connection_idle(conn):
             conn.close()
-            conn = conn.__class__(self)
+            conn = self._create_connection(conn.__class__)
 
         return conn
 
@@ -238,7 +248,7 @@ class WsPool(BasePool):
 
     async def acquire(self, _urlparsed: ParseResult = None):
         """Acquire connection."""
-        return self.conn_cls(self)
+        return self._create_connection(self.conn_cls)
 
     def release(self, conn) -> None:
         """Release connection."""

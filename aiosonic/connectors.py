@@ -40,6 +40,10 @@ class TCPConnector:
             TTL in milliseconds for DNS cache. Defaults to 10000 (10 seconds).
         use_dns_cache (bool):
             Flag to indicate usage of DNS cache. Defaults to True.
+        local_addr (Optional[tuple[str, int]]):
+            Local address (host, port) to bind to when making connections.
+            This will be applied to the default pool configuration if no specific
+            configuration is provided. None means use system default.
     """
 
     def __init__(
@@ -51,6 +55,7 @@ class TCPConnector:
         resolver=None,
         ttl_dns_cache=10000,
         use_dns_cache=True,
+        local_addr: Optional[tuple[str, int]] = None,
         ):
         from aiosonic.connection import Connection  # avoid circular dependency
 
@@ -62,7 +67,11 @@ class TCPConnector:
             pool_configs = {}
 
         if ":default" not in pool_configs:
-            pool_configs[":default"] = PoolConfig()
+            # Apply local_addr to default pool config if provided
+            default_config = PoolConfig()
+            if local_addr:
+                default_config = PoolConfig(local_addr=local_addr)
+            pool_configs[":default"] = default_config
 
         self.pool_configs = _check_pool_configs(pool_configs)
 

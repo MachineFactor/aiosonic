@@ -49,7 +49,7 @@ class Connection:
             responsible for handling HTTP/2 requests.
     """
 
-    def __init__(self, pool: BasePool) -> None:
+    def __init__(self, pool: BasePool, local_addr: Optional[tuple[str, int]] = None) -> None:
         """Initialize a Connection instance.
 
         Args:
@@ -57,8 +57,11 @@ class Connection:
                 Can be a SmartPool (prioritizes connection reuse by hostname/port),
                 CyclicQueuePool (simple FIFO queue of connections), or
                 WsPool (for WebSocket connections).
+            local_addr (Optional[tuple[str, int]]): Local address (host, port) to bind to when making connections.
+                None means use system default.
         """
         self.pool = pool
+        self.local_addr = local_addr
         self.reader: Optional[StreamReader] = None
         self.writer: Optional[StreamWriter] = None
 
@@ -224,8 +227,13 @@ class Connection:
             )
             dns_info_copy["port"] = port
 
+            # Prepare connection parameters
+            conn_params = dns_info_copy.copy()
+            if self.local_addr:
+                conn_params["local_addr"] = self.local_addr
+            
             self.reader, self.writer = await open_connection(
-                **dns_info_copy, ssl=ssl_context
+                **conn_params, ssl=ssl_context
             )
 
             self.temp_key = key
